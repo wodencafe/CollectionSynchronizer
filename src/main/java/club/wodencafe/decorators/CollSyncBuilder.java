@@ -646,7 +646,7 @@ public final class CollSyncBuilder<T>
 				}
 				catch (Throwable th)
 				{
-					th.printStackTrace();
+					logger.error("CollSyncBuilder.getSchedule", th);
 					clean(ac);
 				}
 			};
