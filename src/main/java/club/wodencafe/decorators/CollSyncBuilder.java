@@ -74,7 +74,7 @@ import static java.util.Objects.nonNull;
  * with a back end service, while preserving the identity of the objects
  * in your list.
  * 
- * @author Christopher Bryan Boyd <wdodencafe@gmail.com>
+ * @author Christopher Bryan Boyd <wodencafe@gmail.com>
  * @version 0.1
  * @since 2018-01-07
  * @see {@link java.lang.System#identityHashCode}

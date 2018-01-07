@@ -44,7 +44,7 @@ import org.slf4j.LoggerFactory;
  * <strong>FieldSyncer</strong> will synchronize your objects
  * with reflection.
  * 
- * @author Christopher Bryan Boyd <wdodencafe@gmail.com>
+ * @author Christopher Bryan Boyd <wodencafe@gmail.com>
  * @version 0.1
  * @since 2018-01-07
  *

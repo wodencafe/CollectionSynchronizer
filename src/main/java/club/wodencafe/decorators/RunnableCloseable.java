@@ -40,7 +40,7 @@ import java.util.concurrent.CompletableFuture;
  * that combines {@link java.lang.Runnable} and
  * {@link java.lang.AutoCloseable}, and provides a {@link #runAsync} method.
  *  
- * @author Christopher Bryan Boyd <wdodencafe@gmail.com>
+ * @author Christopher Bryan Boyd <wodencafe@gmail.com>
  * @version 0.1
  * @since 2018-01-07
  * @see {@link java.lang.System#identityHashCode}

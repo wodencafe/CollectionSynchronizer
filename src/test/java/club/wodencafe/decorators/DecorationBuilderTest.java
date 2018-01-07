@@ -70,6 +70,7 @@ public class DecorationBuilderTest
 		Collection<Person> personList = PersonService.getPeople();
 		assertTrue(personList.iterator().hasNext());
 		Person p1 = personList.iterator().next();
+		int originalIdentityHashCode = System.identityHashCode(p1);
 		Person p2 = new Person();
 		p2.setId(p1.getId());
 		p2.setName(p1.getName());
@@ -86,6 +87,7 @@ public class DecorationBuilderTest
 
 		});
 		assertTrue(consumed);
+		assertEquals(System.identityHashCode(p1), originalIdentityHashCode);
 	}
 
 	private PhantomReference<RunnableCloseable> decorateList(Collection<Person> personList)
