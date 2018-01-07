@@ -1,16 +1,16 @@
 # Gradle
 # ------
 .gradle
-/build
+./build
 
 # Eclipse
 # -------
 *.classpath
 *.project
 *.settings
-/bin
+./bin
 .metadata/
-/.recommenders
+./.recommenders
 
 # HPROF
 # -----
