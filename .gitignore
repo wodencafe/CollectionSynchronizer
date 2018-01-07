@@ -5,6 +5,7 @@
 
 # Eclipse
 # -------
+*.class
 *.classpath
 *.project
 *.settings
