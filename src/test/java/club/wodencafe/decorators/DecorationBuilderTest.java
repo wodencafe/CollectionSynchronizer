@@ -93,8 +93,8 @@ public class DecorationBuilderTest
 	private PhantomReference<RunnableCloseable> decorateList(Collection<Person> personList)
 			throws InterruptedException, ExecutionException
 	{
-		RunnableCloseable ac = CollSyncBuilder.builder(Person.class)
-				.withAutoRefresh(() -> PersonService.getPeople(), 1, TimeUnit.HOURS, 1)
+		RunnableCloseable ac = CollectionSynchronizer.builder(Person.class)
+				.withRefresh(() -> PersonService.getPeople())
 				.withPrimaryKeyFunction(Person::getId).withCloseHandler(() -> consumed = true).decorate(personList);
 
 		CompletableFuture.runAsync(ac).get();

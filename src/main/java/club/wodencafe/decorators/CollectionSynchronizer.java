@@ -68,8 +68,8 @@ import io.reactivex.schedulers.Schedulers;
 import static java.util.Objects.nonNull;
 
 /**
- * <h1>CollSyncBuilder</h1> 
- * <strong>CollSyncBuilder</strong> is a utility
+ * <h1>CollectionSynchronizer</h1> 
+ * <strong>CollectionSynchronizer</strong> is a utility
  * <i>decorator</i> class, designed to assist you synchronizing a list
  * with a back end service, while preserving the identity of the objects
  * in your list.
@@ -80,11 +80,11 @@ import static java.util.Objects.nonNull;
  * @see {@link java.lang.System#identityHashCode}
  *
  */
-public final class CollSyncBuilder<T>
+public final class CollectionSynchronizer<T>
 {
 
 	// SLF4J Logger
-	private static final Logger logger = LoggerFactory.getLogger(CollSyncBuilder.class);
+	private static final Logger logger = LoggerFactory.getLogger(CollectionSynchronizer.class);
 
 	private static ScheduledExecutorService scheduledExecutor = Executors.newSingleThreadScheduledExecutor();
 
@@ -98,7 +98,9 @@ public final class CollSyncBuilder<T>
 
 	private Optional<Function<T, ?>> primaryKeyFunction = Optional.empty();
 
-	private Optional<AutoRefreshSupplier<T>> autoRefreshSupplier = Optional.empty();
+	private Optional<AutoRefreshData<T>> autoRefreshSupplier = Optional.empty();
+	
+	private Optional<Supplier<Collection<T>>> refreshSupplier = Optional.empty();
 
 	private Optional<Observable<T>> createObservable = Optional.empty();
 
@@ -109,141 +111,149 @@ public final class CollSyncBuilder<T>
 	private Collection<Runnable> callback = new ArrayList<>();
 
 	private Collection<Runnable> closeHandler = new ArrayList<>();
+	
+	private Optional<Integer> limit = Optional.empty();
 
-	private CollSyncBuilder()
+	private CollectionSynchronizer()
 	{
 	}
  
-	public CollSyncBuilder<T> withCallback(Runnable callback)
+	public CollectionSynchronizer<T> withCallback(Runnable callback)
 	{
 		Objects.requireNonNull(callback, "Cannot provide a null callback.");
-		logger.trace(String.format("CollSyncBuilder.withCallback([callback] Runnable %d)",
+		logger.trace(String.format("CollectionSynchronizer.withCallback([callback] Runnable %d)",
 				System.identityHashCode(callback)));
 		this.callback.add(callback);
 		return this;
 
 	}
 
-	public CollSyncBuilder<T> withPrimaryKeyFunction(Function<T, ?> primaryKeyFunction)
+	public CollectionSynchronizer<T> withPrimaryKeyFunction(Function<T, ?> primaryKeyFunction)
 	{
 		Objects.requireNonNull(primaryKeyFunction, "Cannot provide a null Primary Key function");
-		logger.trace(String.format("CollSyncBuilder.withPrimaryKeyFunction([primaryKeyFunction] Function<T, ?> %d)",
+		logger.trace(String.format("CollectionSynchronizer.withPrimaryKeyFunction([primaryKeyFunction] Function<T, ?> %d)",
 				System.identityHashCode(primaryKeyFunction)));
 		this.primaryKeyFunction = Optional.of(primaryKeyFunction);
 		return this;
 
 	}
-
-	public CollSyncBuilder<T> withCreate(Observable<T> create)
+	
+	public CollectionSynchronizer<T> withCreate(Observable<T> create)
 	{
 		Objects.requireNonNull(create, "Observable cannot be null.");
-		logger.trace(String.format("CollSyncBuilder.withCreate([create] Observable<T> %d)",
+		logger.trace(String.format("CollectionSynchronizer.withCreate([create] Observable<T> %d)",
 				System.identityHashCode(create)));
 		this.createObservable = Optional.of(create);
 		return this;
 
 	}
 
-	public CollSyncBuilder<T> withUpdate(Observable<T> update)
+	public CollectionSynchronizer<T> withUpdate(Observable<T> update)
 	{
 		Objects.requireNonNull(update, "Observable cannot be null.");
-		logger.trace(String.format("CollSyncBuilder.withUpdate([update] Observable<T> %d)",
+		logger.trace(String.format("CollectionSynchronizer.withUpdate([update] Observable<T> %d)",
 				System.identityHashCode(update)));
 		this.updateObservable = Optional.of(update);
 		return this;
 
 	}
 
-	public CollSyncBuilder<T> withDelete(Observable<T> delete)
+	public CollectionSynchronizer<T> withDelete(Observable<T> delete)
 	{
 		Objects.requireNonNull(delete, "Observable cannot be null.");
-		logger.trace(String.format("CollSyncBuilder.withDelete([delete] Observable<T> %d)",
+		logger.trace(String.format("CollectionSynchronizer.withDelete([delete] Observable<T> %d)",
 				System.identityHashCode(delete)));
 		this.deleteObservable = Optional.of(delete);
 		return this;
 
 	}
 
-	public CollSyncBuilder<T> withCloseHandler(Runnable closeHandler)
+	public CollectionSynchronizer<T> withCloseHandler(Runnable closeHandler)
 	{
 		Objects.requireNonNull(closeHandler, "Cannot provide a null closeHandler.");
-		logger.trace(String.format("CollSyncBuilder.withCloseHandler([closeHandler] Runnable %d)",
+		logger.trace(String.format("CollectionSynchronizer.withCloseHandler([closeHandler] Runnable %d)",
 				System.identityHashCode(closeHandler)));
 		this.closeHandler.add(closeHandler);
 		return this;
 	}
 
-	public CollSyncBuilder<T> withReflectionEquality()
+	public CollectionSynchronizer<T> withReflectionEquality()
 	{
-		logger.trace("CollSyncBuilder.withReflectionEquality()", System.identityHashCode(closeHandler));
+		logger.trace("CollectionSynchronizer.withReflectionEquality()", System.identityHashCode(closeHandler));
 		this.equality = EqualsBuilder::reflectionEquals;
 		return this;
 	}
 
-	public CollSyncBuilder<T> withEquality(BiPredicate<T, T> equality)
+	public CollectionSynchronizer<T> withEquality(BiPredicate<T, T> equality)
 	{
 		Objects.requireNonNull(equality, "BiPredicate<T, T> 'equality' cannot be null.");
-		logger.trace("CollSyncBuilder.withEquality([equality] BiPredicate<T, T> %d)",
+		logger.trace("CollectionSynchronizer.withEquality([equality] BiPredicate<T, T> %d)",
 				System.identityHashCode(equality));
 		this.equality = equality;
 		return this;
 	}
 
-	public CollSyncBuilder<T> withEqualizer(BiConsumer<T, T> equalizer)
+	public CollectionSynchronizer<T> withLimit(int limit)
+	{
+
+		Preconditions.checkArgument(limit > 0, "int 'limit' must be greater than 0, you supplied %s.", limit);
+		
+		logger.trace("CollectionSynchronizer.withLimit([limit] int %d)",
+				limit);
+		this.limit = Optional.of(limit);
+		return this;
+	}
+
+	public CollectionSynchronizer<T> withEqualizer(BiConsumer<T, T> equalizer)
 	{
 		Objects.requireNonNull(equalizer, "BiConsumer<T, T> 'equalizer' cannot be null.");
-		logger.trace("CollSyncBuilder.withEqualizer(BiConsumer<T, T> %d)", System.identityHashCode(equalizer));
+		logger.trace("CollectionSynchronizer.withEqualizer(BiConsumer<T, T> %d)", System.identityHashCode(equalizer));
 		this.equalizer = equalizer;
 		return this;
 	}
 
-	public CollSyncBuilder<T> withExecutor(ExecutorService service)
+	public CollectionSynchronizer<T> withExecutor(ExecutorService service)
 	{
 		this.executorService = Optional.ofNullable(service);
-		logger.trace("CollSyncBuilder.withExecutor([service] ExecutorService "
+		logger.trace("CollectionSynchronizer.withExecutor([service] ExecutorService "
 				+ (service == null ? null : System.identityHashCode(service)) + ")");
 		return this;
 	}
 
-	public CollSyncBuilder<T> withExpiration(LocalDateTime expiration)
+	public CollectionSynchronizer<T> withExpiration(LocalDateTime expiration)
 	{
-		logger.trace("CollSyncBuilder.withExpiration([expiration] LocalDateTime "
+		logger.trace("CollectionSynchronizer.withExpiration([expiration] LocalDateTime "
 				+ (expiration == null ? null : System.identityHashCode(expiration)) + ")");
 		this.expiration = Optional.ofNullable(expiration);
 		return this;
 	}
-
-	public CollSyncBuilder<T> withAutoRefresh(Supplier<Collection<T>> supplier, int time, TimeUnit timeUnit,
-			int limit)
+	
+	public CollectionSynchronizer<T> withRefresh(Supplier<Collection<T>> supplier)
 	{
+
 		Objects.requireNonNull(supplier, "Supplier<T> 'supplier' cannot be null.");
+		
+		this.refreshSupplier = Optional.of(supplier);
+
+		logger.trace(
+				"CollectionSynchronizer.withRefresh([supplier] Supplier<Collection<T>> %d)",
+				System.identityHashCode(supplier));
+
+		return this;
+	}
+
+	public CollectionSynchronizer<T> withAutoRefresh(int time, TimeUnit timeUnit)
+	{
 
 		Preconditions.checkArgument(time > 0, "int 'time' must be greater than 0, you supplied %s.", time);
 
 		Objects.requireNonNull(timeUnit, "TimeUnit 'timeUnit' cannot be null.");
 
 		logger.trace(
-				"CollSyncBuilder.withAutoRefresh([supplier] Supplier<Collection<T>> %d, [time] int %d, [timeUnit] TimeUnit %s, [limit] int %d)",
-				System.identityHashCode(supplier), time, timeUnit.name(), limit);
+				"CollectionSynchronizer.withAutoRefresh([time] int %d, [timeUnit] TimeUnit %s)",
+				time, timeUnit.name());
 
-		this.autoRefreshSupplier = Optional.of(AutoRefreshSupplier.of(supplier, time, timeUnit, limit));
-
-		return this;
-	}
-
-	public CollSyncBuilder<T> withAutoRefresh(Supplier<Collection<T>> supplier, int time, TimeUnit timeUnit)
-	{
-		Preconditions.checkNotNull(supplier, "Supplier<T> 'supplier' cannot be null.");
-
-		Preconditions.checkArgument(time > 0, "int 'time' must be greater than 0, you supplied %s.", time);
-
-		Preconditions.checkNotNull(timeUnit, "TimeUnit 'timeUnit' cannot be null.");
-
-		logger.trace(
-				"CollSyncBuilder.withAutoRefresh([supplier] Supplier<Collection<T>> %d, [time] int %d, [timeUnit] TimeUnit %s",
-				System.identityHashCode(supplier), time, timeUnit.name());
-
-		this.autoRefreshSupplier = Optional.of(AutoRefreshSupplier.of(supplier, time, timeUnit, -1));
+		this.autoRefreshSupplier = Optional.of(AutoRefreshData.of(time, timeUnit));
 
 		return this;
 	}
@@ -252,7 +262,7 @@ public final class CollSyncBuilder<T>
 	{
 
 		Objects.requireNonNull(list, "Collection to decorate cannot be null");
-		logger.trace("CollSyncBuilder.decorate([list] Supplier<Collection<T>> %d)", System.identityHashCode(list));
+		logger.trace("CollectionSynchronizer.decorate([list] Supplier<Collection<T>> %d)", System.identityHashCode(list));
 		AtomicInteger atomic = new AtomicInteger();
 		WeakReference<Collection<T>> obj = new WeakReference<>(list);
 		handleInvalidArguments();
@@ -353,7 +363,7 @@ public final class CollSyncBuilder<T>
 			}
 			catch (Exception e)
 			{
-				logger.error("CollSyncBuilder.decorate$Runnable[proxy] error while cleaning", e);
+				logger.error("CollectionSynchronizer.decorate$Runnable[proxy] error while cleaning", e);
 			}
 
 		};
@@ -377,38 +387,45 @@ public final class CollSyncBuilder<T>
 			@Override
 			public CompletableFuture<Void> runAsync()
 			{
-				if (autoRefreshSupplier.isPresent())
+				if (!isClosed())
 				{
-					CompletableFuture<Void> cf = new CompletableFuture<>();
-					if (autoRefreshSupplier.get().getLimit() > atomic.get() && obj.get() != null)
+					if (refreshSupplier.isPresent())
 					{
-						refreshList(obj.get(), executorService.get(), equality, primaryKeyFunction.get(),
-								autoRefreshSupplier.get().getSupplier(), equalizer, atomic, Optional.of(() ->
-								{
-									if (callback.size() > 0)
-										for (Runnable runnable : callback)
-											runnable.run();
-									cf.complete(null);
-								}), true);
+						CompletableFuture<Void> cf = new CompletableFuture<>();
+						if (Objects.nonNull(obj.get()) && (!limit.isPresent() || limit.get() > atomic.get()))
+						{
+							refreshList(obj.get(), executorService.get(), equality, primaryKeyFunction.get(),
+									refreshSupplier.get(), equalizer, atomic, Optional.of(() ->
+									{
+										if (callback.size() > 0)
+											for (Runnable runnable : callback)
+												runnable.run();
+										cf.complete(null);
+									}), true);
+						}
+						else
+						{
+							try
+							{
+								close();
+							}
+							catch (Exception e)
+							{
+								logger.error(
+										"CollectionSynchronizer.decorate$RefreshableCloseable.runAsync()[autoCloseable] error while decorating",
+										e);
+							}
+						}
+						return cf;
 					}
 					else
-					{
-						try
-						{
-							close();
-						}
-						catch (Exception e)
-						{
-							logger.error(
-									"CollSyncBuilder.decorate$RefreshableCloseable[autoCloseable] error while decorating",
-									e);
-						}
-					}
-					return cf;
+						throw new UnsupportedOperationException(
+								"Cannot call runAsync without calling CollectionSynchronizer.withRefresh");
 				}
 				else
-					throw new UnsupportedOperationException(
-							"Cannot call refresh without calling CollSyncBuilder.withAutoRefresh");
+				{
+					throw new UnsupportedOperationException("Cannot call runAsync after the object has been closed.");
+				}
 			}
 
 			@Override
@@ -420,14 +437,16 @@ public final class CollSyncBuilder<T>
 			@Override
 			public void run()
 			{
-				if (autoRefreshSupplier.isPresent())
+				if (!isClosed())
 				{
-					if (autoRefreshSupplier.get().getLimit() > atomic.get() && obj.get() != null)
+					if (refreshSupplier.isPresent())
+					{
+					if (Objects.nonNull(obj.get()) && (!limit.isPresent() || limit.isPresent() && limit.get() > atomic.get()))
 					{
 						try
 						{
 							refreshList(obj.get(), executorService.get(), equality, primaryKeyFunction.get(),
-									autoRefreshSupplier.get().getSupplier(), equalizer, atomic, Optional.of(() ->
+									refreshSupplier.get(), equalizer, atomic, Optional.of(() ->
 									{
 										if (callback.size() > 0)
 											for (Runnable runnable : callback)
@@ -437,7 +456,7 @@ public final class CollSyncBuilder<T>
 						catch (InterruptedException | ExecutionException e)
 						{
 							logger.error(
-								"CollSyncBuilder.decorate$RefreshableCloseable.run()[autoCloseable] error while running AutoCloseable",
+								"CollectionSynchronizer.decorate$RefreshableCloseable.run()[autoCloseable] error while running AutoCloseable",
 								e);
 						}
 					}
@@ -450,14 +469,19 @@ public final class CollSyncBuilder<T>
 						catch (Exception e)
 						{
 							logger.error(
-									"CollSyncBuilder.decorate$RefreshableCloseable.run()[autoCloseable] error while closing AutoCloseable",
+									"CollectionSynchronizer.decorate$RefreshableCloseable.run()[autoCloseable] error while closing AutoCloseable",
 									e);
 						}
 					}
 				}
 				else
 					throw new UnsupportedOperationException(
-							"Cannot call refresh without calling CollSyncBuilder.withAutoRefresh");
+							"Cannot call run without calling CollectionSynchronizer.withRefresh");
+				}
+				else
+				{
+					throw new UnsupportedOperationException("Cannot call run after the object has been closed.");
+				}
 
 			}
 
@@ -475,7 +499,7 @@ public final class CollSyncBuilder<T>
 		Objects.requireNonNull(obj.get(), "weakreference value cannot be null");
 
 		logger.trace(
-				"CollSyncBuilder.getAutoCloseable([closeables] Collection<AutoCloseable> %d, [obj] WeakReference<Collection<T>> %d)",
+				"CollectionSynchronizer.getAutoCloseable([closeables] Collection<AutoCloseable> %d, [obj] WeakReference<Collection<T>> %d)",
 				System.identityHashCode(closeables), System.identityHashCode(closeables));
 		final AutoCloseable[] a = new AutoCloseable[1];
 		a[0] = new AutoCloseable()
@@ -503,7 +527,7 @@ public final class CollSyncBuilder<T>
 		if (autoRefreshSupplier.isPresent())
 		{
 			future[0] = getSchedule(list, executorService.get(), equality, primaryKeyFunction.get(),
-					autoRefreshSupplier.get(), ac, equalizer, atomic, Optional.of(() ->
+					autoRefreshSupplier.get(), refreshSupplier.get(), limit, ac, equalizer, atomic, Optional.of(() ->
 					{
 
 						if (callback.size() > 0)
@@ -515,14 +539,17 @@ public final class CollSyncBuilder<T>
 		return future;
 	}
 
+
 	private void handleInvalidArguments()
 	{
 		primaryKeyFunction.orElseThrow(() -> new IllegalArgumentException("Must Specify Primary Key Function"));
 
 		if (!createObservable.isPresent() && !updateObservable.isPresent() && !deleteObservable.isPresent()
-				&& !autoRefreshSupplier.isPresent())
+				&& !refreshSupplier.isPresent())
 			throw new IllegalArgumentException("Must specify Observable<T> 'createObservable', "
-					+ "Observable<T> 'updateObservable', Observable<T> 'deleteObservable', or AutoRefreshSupplier<T> 'autoRefreshSupplier'.");
+					+ "Observable<T> 'updateObservable', Observable<T> 'deleteObservable', or Supplier<Collection<T>> 'refreshSupplier'.");
+		if (autoRefreshSupplier.isPresent() && !refreshSupplier.isPresent())
+			throw new IllegalArgumentException("Must specify Supplier<Collection<T>> 'refreshSupplier' when using AutoRefreshSupplier<T> 'autoRefreshSupplier'.");
 	}
 
 	private void handleExpiration(WeakReference<?>[] ac)
@@ -542,7 +569,7 @@ public final class CollSyncBuilder<T>
 				}
 				catch (Exception e)
 				{
-					logger.error("CollSyncBuilder.handleExpiration", e);
+					logger.error("CollectionSynchronizer.handleExpiration", e);
 				}
 			}), seconds, TimeUnit.SECONDS);
 		}
@@ -606,10 +633,11 @@ public final class CollSyncBuilder<T>
 	}
 
 	private static <T> ScheduledFuture<?> getSchedule(Collection<T> list, ExecutorService executorService,
-			BiPredicate<T, T> equality, Function<T, ?> primaryKeyFunction, AutoRefreshSupplier<T> autoRefreshSupplier,
+			BiPredicate<T, T> equality, Function<T, ?> primaryKeyFunction, AutoRefreshData<T> autoRefreshSupplier,
+			Supplier<Collection<T>> refreshSupplier, Optional<Integer> limit,
 			WeakReference<?>[] ac, BiConsumer<T, T> equalizer, AtomicInteger atomic, Optional<Runnable> callback)
 	{
-		logger.trace("CollSyncBuilder.getSchedule(" + "[list] Collection<T> %d, "
+		logger.trace("CollectionSynchronizer.getSchedule(" + "[list] Collection<T> %d, "
 				+ "[executorService] ExecutorService %d, " + "[equality] BiPredicate<T, T> %d, "
 				+ "[primaryKeyFunction] Function<T, ?> %d, " + "[autoRefreshSupplier] AutoRefreshSupplier<T> %d, "
 				+ "[ac] WeakReference<?>[] %d, " + "[equalizer] BiConsumer<T, T> %d, " + "[atomic] AtomicInteger %d, "
@@ -620,7 +648,9 @@ public final class CollSyncBuilder<T>
 				System.identityHashCode(callback));
 
 		final WeakReference<Collection<T>> weakReference = new WeakReference<>(list);
-		return scheduledExecutor.scheduleAtFixedRate(() ->
+		ScheduledFuture<?>[] future = new ScheduledFuture<?>[1];
+		
+		future[0] = scheduledExecutor.scheduleAtFixedRate(() ->
 		{
 			Runnable runnable = () ->
 			{
@@ -628,13 +658,13 @@ public final class CollSyncBuilder<T>
 				{
 					if (nonNull(weakReference.get()))
 					{
-						if (autoRefreshSupplier.getLimit() > atomic.get())
+						if (!future[0].isCancelled() && !limit.isPresent() || limit.isPresent() && limit.get() > atomic.get())
 						{
 							Collection<T> weakList = weakReference.get();
 							synchronized (weakList)
 							{
 								refreshList(weakList, executorService, equality, primaryKeyFunction,
-										autoRefreshSupplier.getSupplier(), equalizer, atomic, callback, true);
+										refreshSupplier, equalizer, atomic, callback, true);
 							}
 						}
 						else
@@ -646,7 +676,7 @@ public final class CollSyncBuilder<T>
 				}
 				catch (Throwable th)
 				{
-					logger.error("CollSyncBuilder.getSchedule", th);
+					logger.error("CollectionSynchronizer.getSchedule", th);
 					clean(ac);
 				}
 			};
@@ -657,9 +687,10 @@ public final class CollSyncBuilder<T>
 			}
 			catch (InterruptedException | ExecutionException e)
 			{
-				logger.error("CollSyncBuilder.getSchedule", e);
+				logger.error("CollectionSynchronizer.getSchedule", e);
 			}
 		}, autoRefreshSupplier.getTime(), autoRefreshSupplier.getTime(), autoRefreshSupplier.getTimeUnit());
+		return future[0];
 	}
 
 	private static <T> CompletableFuture<Void> refreshList(Collection<T> list, ExecutorService executorService,
@@ -730,7 +761,7 @@ public final class CollSyncBuilder<T>
 					}
 					catch (InterruptedException | ExecutionException e)
 					{
-						logger.error("CollSyncBuilder.refreshList", e);
+						logger.error("CollectionSynchronizer.refreshList", e);
 					}
 				}
 		}, executorService);
@@ -742,7 +773,7 @@ public final class CollSyncBuilder<T>
 		{
 			if (logger.isTraceEnabled())
 			{
-				logger.trace("CollSyncBuilder.clean([weakReference] WeakReference<?>[] "
+				logger.trace("CollectionSynchronizer.clean([weakReference] WeakReference<?>[] "
 						+ (weakReference == null ? "NULL" : System.identityHashCode(weakReference)) + ")");
 			}
 			if (nonNull(weakReference) && nonNull(weakReference[0]) && nonNull(weakReference[0].get()))
@@ -752,39 +783,35 @@ public final class CollSyncBuilder<T>
 			}
 			else
 			{
-				logger.warn("CollSyncBuilder.clean unable to clean WeakReference<?>[]");
+				logger.warn("CollectionSynchronizer.clean unable to clean WeakReference<?>[]");
 			}
 		}
 		catch (Exception e)
 		{
-			logger.error("CollSyncBuilder.clean error while cleaning", e);
+			logger.error("CollectionSynchronizer.clean error while cleaning", e);
 		}
 	}
 
-	public static <X> CollSyncBuilder<X> builder(Class<X> clazz)
+	public static <X> CollectionSynchronizer<X> builder(Class<X> clazz)
 	{
 		Objects.requireNonNull(clazz, "Class cannot be null.");
-		logger.trace("CollSyncBuilder.builder([clazz] Class<X> %d)", System.identityHashCode(clazz));
-		return new CollSyncBuilder<X>();
+		logger.trace("CollectionSynchronizer.builder([clazz] Class<X> %d)", System.identityHashCode(clazz));
+		return new CollectionSynchronizer<X>();
 	}
 
-	private interface AutoRefreshSupplier<T>
+	private interface AutoRefreshData<T>
 	{
-
-		Supplier<Collection<T>> getSupplier();
 
 		int getTime();
 
 		TimeUnit getTimeUnit();
 
-		int getLimit();
-
-		static <T> AutoRefreshSupplier<T> of(Supplier<Collection<T>> supplier, int time, TimeUnit timeUnit, int limit)
+		static <T> AutoRefreshData<T> of(int time, TimeUnit timeUnit)
 		{
 			logger.trace(
-					"AutoRefreshSupplier.of([[supplier] Supplier<Collection<T>> %d, [time] int %d, [timeUnit] TimeUnit %s, [limit] int %d)",
-					System.identityHashCode(supplier), time, timeUnit.name(), limit);
-			return new AutoRefreshSupplierImpl<T>(supplier, time, timeUnit, limit);
+					"AutoRefreshSupplier.of([time] int %d, [timeUnit] TimeUnit %s)",
+					time, timeUnit.name());
+			return new AutoRefreshSupplierImpl<T>(time, timeUnit);
 		}
 
 	}
@@ -813,7 +840,7 @@ public final class CollSyncBuilder<T>
 			@Override
 			public void onError(Throwable e)
 			{
-				logger.error("CollSyncBuilder.Handlers.BaseObservable.onError", e);
+				logger.error("CollectionSynchronizer.Handlers.BaseObservable.onError", e);
 				onComplete();
 			}
 
@@ -855,7 +882,7 @@ public final class CollSyncBuilder<T>
 						}
 						catch (Throwable th)
 						{
-							logger.error("CollSyncBuilder.Handlers.handleDelete.$BaseObservable.onNext error", th);
+							logger.error("CollectionSynchronizer.Handlers.handleDelete.$BaseObservable.onNext error", th);
 							onComplete();
 						}
 					}
@@ -894,7 +921,7 @@ public final class CollSyncBuilder<T>
 						}
 						catch (Throwable th)
 						{
-							logger.error("CollSyncBuilder.Handlers.handleUpdate.$BaseObservable.onNext error", th);
+							logger.error("CollectionSynchronizer.Handlers.handleUpdate.$BaseObservable.onNext error", th);
 							onComplete();
 						}
 					}
@@ -929,7 +956,7 @@ public final class CollSyncBuilder<T>
 						}
 						catch (Throwable th)
 						{
-							logger.error("CollSyncBuilder.Handlers.handleCreate.$BaseObservable.onNext error", th);
+							logger.error("CollectionSynchronizer.Handlers.handleCreate.$BaseObservable.onNext error", th);
 							onComplete();
 						}
 					}
@@ -938,37 +965,24 @@ public final class CollSyncBuilder<T>
 		}
 	}
 
-	private static class AutoRefreshSupplierImpl<T> implements AutoRefreshSupplier<T>
+	private static class AutoRefreshSupplierImpl<T> implements AutoRefreshData<T>
 	{
-
-		private final Supplier<Collection<T>> supplier;
 		private final int time;
 		private final TimeUnit timeUnit;
-		private final int limit;
 
-		private AutoRefreshSupplierImpl(Supplier<Collection<T>> supplier,
+		private AutoRefreshSupplierImpl(
 				int time,
-				TimeUnit timeUnit,
-				int limit)
+				TimeUnit timeUnit)
 		{
 			super();
 
 			logger.trace(
 						"new AutoRefreshSupplierImpl(" +
-							"[supplier] Supplier<Collection<T>> %d," +
 							"[time] int %d," + 
-							"[timeUnit] TimeUnit %s," + 
-							"[limit] int %d)",
-					System.identityHashCode(supplier), time, timeUnit.name(), limit);
-			this.supplier = supplier;
+							"[timeUnit] TimeUnit %s)",
+					time, timeUnit.name());
 			this.time = time;
 			this.timeUnit = timeUnit;
-			this.limit = limit;
-		}
-
-		public Supplier<Collection<T>> getSupplier()
-		{
-			return supplier;
 		}
 
 		public int getTime()
@@ -979,12 +993,6 @@ public final class CollSyncBuilder<T>
 		public TimeUnit getTimeUnit()
 		{
 			return timeUnit;
-		}
-
-		@Override
-		public int getLimit()
-		{
-			return limit;
 		}
 
 	}
