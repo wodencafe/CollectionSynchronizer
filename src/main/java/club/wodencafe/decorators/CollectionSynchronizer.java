@@ -554,7 +554,7 @@ public final class CollectionSynchronizer<T>
 		Objects.requireNonNull(closeables, "closeables cannot be null");
 		Objects.requireNonNull(obj, "weakreference cannot be null");
 		Objects.requireNonNull(obj.get(), "weakreference value cannot be null");
-
+		
 		logger.trace(
 				"CollectionSynchronizer.getAutoCloseable([closeables] Collection<AutoCloseable> %d, [obj] WeakReference<Collection<T>> %d)",
 				System.identityHashCode(closeables), System.identityHashCode(closeables));
@@ -852,11 +852,9 @@ public final class CollectionSynchronizer<T>
 	{
 		try
 		{
-			if (logger.isTraceEnabled())
-			{
-				logger.trace("CollectionSynchronizer.clean([weakReference] WeakReference<?>[] "
-						+ (Objects.isNull(weakReference) ? "NULL" : System.identityHashCode(weakReference)) + ")");
-			}
+			logger.trace("CollectionSynchronizer.clean([weakReference] WeakReference<?>[] "
+					+ (Objects.isNull(weakReference) ? "NULL" : System.identityHashCode(weakReference)) + ")");
+		
 			if (nonNull(weakReference) && nonNull(weakReference[0]) && nonNull(weakReference[0].get()))
 			{
 				AutoCloseable autoCloseable = (AutoCloseable) weakReference[0].get();
