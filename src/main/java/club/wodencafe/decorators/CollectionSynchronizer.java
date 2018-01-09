@@ -219,14 +219,14 @@ public final class CollectionSynchronizer<T>
 	{
 		this.executorService = Optional.ofNullable(service);
 		logger.trace("CollectionSynchronizer.withExecutor([service] ExecutorService "
-				+ (service == null ? null : System.identityHashCode(service)) + ")");
+				+ (Objects.isNull(service) ? null : System.identityHashCode(service)) + ")");
 		return this;
 	}
 
 	public CollectionSynchronizer<T> withExpiration(LocalDateTime expiration)
 	{
 		logger.trace("CollectionSynchronizer.withExpiration([expiration] LocalDateTime "
-				+ (expiration == null ? null : System.identityHashCode(expiration)) + ")");
+				+ (Objects.isNull(expiration) ? null : System.identityHashCode(expiration)) + ")");
 		this.expiration = Optional.ofNullable(expiration);
 		return this;
 	}
@@ -348,7 +348,7 @@ public final class CollectionSynchronizer<T>
 
 		Runnable proxy = () ->
 		{
-			if (ac[0].get() != null)
+			if (Objects.nonNull(ac[0].get()))
 				GarbageDisposal.undecorate(ac[0].get());
 			if (closeHandler.size() > 0)
 			{
@@ -381,7 +381,7 @@ public final class CollectionSynchronizer<T>
 				if (!closed)
 				{
 					closed = true;
-					if (obj.get() != null)
+					if (Objects.nonNull(obj.get()))
 						GarbageDisposal.undecorate(obj.get());
 					proxy.run();
 				}
@@ -855,7 +855,7 @@ public final class CollectionSynchronizer<T>
 			if (logger.isTraceEnabled())
 			{
 				logger.trace("CollectionSynchronizer.clean([weakReference] WeakReference<?>[] "
-						+ (weakReference == null ? "NULL" : System.identityHashCode(weakReference)) + ")");
+						+ (Objects.isNull(weakReference) ? "NULL" : System.identityHashCode(weakReference)) + ")");
 			}
 			if (nonNull(weakReference) && nonNull(weakReference[0]) && nonNull(weakReference[0].get()))
 			{
