@@ -45,8 +45,7 @@ import org.slf4j.LoggerFactory;
  * with reflection.
  * 
  * @author Christopher Bryan Boyd <wodencafe@gmail.com>
- * @version 0.1
- * @since 2018-01-07
+ * @since 0.1
  *
  */
 final class FieldSyncer

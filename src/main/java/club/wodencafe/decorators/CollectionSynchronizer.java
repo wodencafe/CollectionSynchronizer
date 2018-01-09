@@ -43,6 +43,7 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -55,6 +56,7 @@ import java.util.function.BiConsumer;
 import java.util.function.BiPredicate;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.builder.EqualsBuilder;
 import org.slf4j.Logger;
@@ -62,6 +64,8 @@ import org.slf4j.LoggerFactory;
 
 import com.google.common.base.Preconditions;
 import io.reactivex.Observable;
+import io.reactivex.ObservableEmitter;
+import io.reactivex.ObservableOnSubscribe;
 import io.reactivex.Observer;
 import io.reactivex.disposables.Disposable;
 import io.reactivex.schedulers.Schedulers;
@@ -75,8 +79,7 @@ import static java.util.Objects.nonNull;
  * in your list.
  * 
  * @author Christopher Bryan Boyd <wodencafe@gmail.com>
- * @version 0.1
- * @since 2018-01-07
+ * @since 0.1
  * @see {@link java.lang.System#identityHashCode}
  *
  */
@@ -392,16 +395,44 @@ public final class CollectionSynchronizer<T>
 					if (refreshSupplier.isPresent())
 					{
 						CompletableFuture<Void> cf = new CompletableFuture<>();
-						if (Objects.nonNull(obj.get()) && (!limit.isPresent() || limit.get() > atomic.get()))
+						if (Objects.nonNull(obj.get()) && (!limit.isPresent() || limit.get() > atomic.getAndIncrement()))
 						{
-							refreshList(obj.get(), executorService.get(), equality, primaryKeyFunction.get(),
-									refreshSupplier.get(), equalizer, atomic, Optional.of(() ->
+							Collection<T> weakList = obj.get();
+							if (!refreshingObjects.contains(weakList))
+							{
+								synchronized (weakList)
+								{
+									refreshingObjects.add(weakList);
+									refreshList(weakList, equality, primaryKeyFunction.get(),
+											refreshSupplier.get(), equalizer).subscribeOn(Schedulers.from(executorService.get()))
+									.subscribe((b) -> 
 									{
-										if (callback.size() > 0)
-											for (Runnable runnable : callback)
-												runnable.run();
-										cf.complete(null);
-									}), true);
+										if (b)
+										{
+											Collection<Runnable> callback2 = new ArrayList<>(callback);
+											callback2.add(() -> cf.complete(null));
+											CompletableFuture
+											.allOf(callback2
+											.stream()
+											.map(x -> CompletableFuture.runAsync(x, executorService.get()))
+											.collect(Collectors.toList())
+											.toArray(new CompletableFuture<?>[0]))
+											.thenRun(() ->
+											{
+												refreshingObjects.remove(weakList);
+											});
+											
+											
+										}
+										else
+										{
+											refreshingObjects.remove(weakList);
+										}
+										
+									});
+								}
+								
+							}
 						}
 						else
 						{
@@ -441,42 +472,68 @@ public final class CollectionSynchronizer<T>
 				{
 					if (refreshSupplier.isPresent())
 					{
-					if (Objects.nonNull(obj.get()) && (!limit.isPresent() || limit.isPresent() && limit.get() > atomic.get()))
-					{
-						try
+						if (Objects.nonNull(obj.get()) && (!limit.isPresent() || limit.isPresent() && limit.get() > atomic.get()))
 						{
-							refreshList(obj.get(), executorService.get(), equality, primaryKeyFunction.get(),
-									refreshSupplier.get(), equalizer, atomic, Optional.of(() ->
+							try
+							{
+								Collection<T> weakList = obj.get();
+								if (!refreshingObjects.contains(weakList))
+								{
+									refreshingObjects.add(weakList);
+									boolean b= refreshList(weakList, equality, primaryKeyFunction.get(),
+											refreshSupplier.get(), equalizer).subscribeOn(Schedulers.from(executorService.get()))
+									.blockingFirst();
+									
+									if (b)
 									{
 										if (callback.size() > 0)
-											for (Runnable runnable : callback)
-												runnable.run();
-									}), false).get();
-						}
-						catch (InterruptedException | ExecutionException e)
-						{
-							logger.error(
-								"CollectionSynchronizer.decorate$RefreshableCloseable.run()[autoCloseable] error while running AutoCloseable",
-								e);
-						}
-					}
-					else
-					{
-						try
-						{
-							close();
-						}
-						catch (Exception e)
-						{
-							logger.error(
-									"CollectionSynchronizer.decorate$RefreshableCloseable.run()[autoCloseable] error while closing AutoCloseable",
+										{
+											CompletableFuture
+												.allOf(callback
+												.stream()
+												.map(x -> CompletableFuture.runAsync(x, executorService.get()))
+												.collect(Collectors.toList())
+												.toArray(new CompletableFuture<?>[0]))
+												.thenRun(() -> refreshingObjects.remove(weakList));
+											
+										}
+										else
+										{
+											refreshingObjects.remove(weakList);
+										}
+									}
+									else
+									{
+										refreshingObjects.remove(weakList);
+									}
+								}
+							}
+							catch (Exception e)
+							{
+								logger.error(
+									"CollectionSynchronizer.decorate$RefreshableCloseable.run()[autoCloseable] error while running AutoCloseable",
 									e);
+							}
+						}
+						else
+						{
+							try
+							{
+								close();
+							}
+							catch (Exception e)
+							{
+								logger.error(
+										"CollectionSynchronizer.decorate$RefreshableCloseable.run()[autoCloseable] error while closing AutoCloseable",
+										e);
+							}
 						}
 					}
-				}
-				else
-					throw new UnsupportedOperationException(
-							"Cannot call run without calling CollectionSynchronizer.withRefresh");
+					else 
+					{	
+						throw new UnsupportedOperationException(
+								"Cannot call run without calling CollectionSynchronizer.withRefresh");
+					}
 				}
 				else
 				{
@@ -527,13 +584,7 @@ public final class CollectionSynchronizer<T>
 		if (autoRefreshSupplier.isPresent())
 		{
 			future[0] = getSchedule(list, executorService.get(), equality, primaryKeyFunction.get(),
-					autoRefreshSupplier.get(), refreshSupplier.get(), limit, ac, equalizer, atomic, Optional.of(() ->
-					{
-
-						if (callback.size() > 0)
-							for (Runnable runnable : callback)
-								runnable.run();
-					}));
+					autoRefreshSupplier.get(), refreshSupplier.get(), limit, ac, equalizer, atomic, callback);
 
 		}
 		return future;
@@ -631,11 +682,12 @@ public final class CollectionSynchronizer<T>
 		}
 		return createHandler;
 	}
+	private static final Set<Object> refreshingObjects = new HashSet<>();
 
 	private static <T> ScheduledFuture<?> getSchedule(Collection<T> list, ExecutorService executorService,
 			BiPredicate<T, T> equality, Function<T, ?> primaryKeyFunction, AutoRefreshData<T> autoRefreshSupplier,
 			Supplier<Collection<T>> refreshSupplier, Optional<Integer> limit,
-			WeakReference<?>[] ac, BiConsumer<T, T> equalizer, AtomicInteger atomic, Optional<Runnable> callback)
+			WeakReference<?>[] ac, BiConsumer<T, T> equalizer, AtomicInteger atomic,Collection<Runnable> callback)
 	{
 		logger.trace("CollectionSynchronizer.getSchedule(" + "[list] Collection<T> %d, "
 				+ "[executorService] ExecutorService %d, " + "[equality] BiPredicate<T, T> %d, "
@@ -658,19 +710,56 @@ public final class CollectionSynchronizer<T>
 				{
 					if (nonNull(weakReference.get()))
 					{
-						if (!future[0].isCancelled() && !limit.isPresent() || limit.isPresent() && limit.get() > atomic.get())
+						Collection<T> weakList = weakReference.get();
+						if (!future[0].isCancelled() && !limit.isPresent() || limit.isPresent() && limit.get() > atomic.getAndIncrement())
 						{
-							Collection<T> weakList = weakReference.get();
-							synchronized (weakList)
+							if (!refreshingObjects.contains(weakList))
 							{
-								refreshList(weakList, executorService, equality, primaryKeyFunction,
-										refreshSupplier, equalizer, atomic, callback, true);
+								synchronized (weakList)
+								{
+									refreshingObjects.add(weakList);
+									refreshList(weakList, equality, primaryKeyFunction,
+											refreshSupplier, equalizer).subscribeOn(Schedulers.from(executorService))
+									.subscribe((b) -> {
+										if (b)
+										{
+											if (callback.size() > 0)
+											{
+												CompletableFuture
+												.allOf(
+														callback.stream()
+														.map(x -> CompletableFuture.runAsync(x, executorService))
+														.collect(Collectors.toList())
+														.toArray(new CompletableFuture<?>[0])
+														).thenRun(() ->
+														{
+															refreshingObjects.remove(weakList);
+														});
+												
+											}
+											else
+											{
+												refreshingObjects.remove(weakList);
+											}
+										}
+										else
+										{
+											refreshingObjects.remove(weakList);
+										}
+										
+									});
+								}
+								
 							}
 						}
 						else
 						{
 							clean(ac);
 						}
+					}
+					else
+					{
+						clean(ac);
 					}
 
 				}
@@ -693,78 +782,70 @@ public final class CollectionSynchronizer<T>
 		return future[0];
 	}
 
-	private static <T> CompletableFuture<Void> refreshList(Collection<T> list, ExecutorService executorService,
+	private static <T> Observable<Boolean> refreshList(Collection<T> list,
 			BiPredicate<T, T> equality, Function<T, ?> primaryKeyFunction, Supplier<Collection<T>> supplier,
-			BiConsumer<T, T> equalizer, AtomicInteger atomicInteger, Optional<Runnable> callback,boolean callAsync)
+			BiConsumer<T, T> equalizer)
 	{
-		return CompletableFuture.runAsync(() ->
+		return Observable.create(new ObservableOnSubscribe<Boolean>()
 		{
-			Optional<Collection<CompletableFuture<Void>>> optional;
-			if (callAsync)
-				optional = Optional.of(new HashSet<>());
-			else
-				optional = Optional.empty();
-			atomicInteger.incrementAndGet();
-			Map<T, Object> pkList = new HashMap<>();
-			list.forEach(c -> pkList.put(c, primaryKeyFunction.apply(c)));
-			Collection<T> newList = supplier.get();
-			for (T c : newList)
+
+			@Override
+			public void subscribe(ObservableEmitter<Boolean> e) throws Exception
 			{
-				if (!pkList.containsValue(primaryKeyFunction.apply(c)))
+				try
 				{
-					list.add(c);
-					if (callback.isPresent())
+					synchronized(list)
 					{
-						CompletableFuture<Void> cf = CompletableFuture.runAsync(callback.get(), executorService);
-						if (callAsync)
-							optional.get().add(cf);
-												
+						Map<T, Object> pkList = new HashMap<>();
+						list.forEach(c -> pkList.put(c, primaryKeyFunction.apply(c)));
+						Collection<T> newList = supplier.get();
+						boolean changed = false;
+						for (T c : newList)
+						{
+							if (!pkList.containsValue(primaryKeyFunction.apply(c)))
+							{
+								list.add(c);
+								changed = true;
+							}
+						}
+						Map<T, Object> newPkList = new HashMap<>();
+						newList.forEach(c -> newPkList.put(c, primaryKeyFunction.apply(c)));
+						for (T c : list)
+						{
+							if (!newPkList.containsValue(primaryKeyFunction.apply(c)))
+							{
+								list.remove(c);
+								changed = true;
+							}
+							else
+							{
+								Optional<T> newValue = newList.stream()
+										.filter(x -> Objects.equals(primaryKeyFunction.apply(x), primaryKeyFunction.apply(c)))
+										.findAny();
+								if (newValue.isPresent() && !equality.test(c, newValue.get()))
+								{
+			
+									equalizer.accept(newValue.get(), c);
+									changed = true;
+			
+								}
+							}
+	
+						}
+						e.onNext(changed);
 					}
+				}
+				catch (Throwable th)
+				{
+					e.onError(th);
+				}
+				finally
+				{
+					e.onComplete();
 				}
 			}
-			Map<T, Object> newPkList = new HashMap<>();
-			newList.forEach(c -> newPkList.put(c, primaryKeyFunction.apply(c)));
-			for (T c : list)
-				if (!newPkList.containsValue(primaryKeyFunction.apply(c)))
-				{
-					list.remove(c);
-					if (callback.isPresent())
-					{
-						CompletableFuture<Void> cf = CompletableFuture.runAsync(callback.get(), executorService);
-						if (callAsync)
-							optional.get().add(cf);
-					}
-				}
-			for (T value : list)
-			{
-				Optional<T> newValue = newList.stream()
-						.filter(x -> Objects.equals(primaryKeyFunction.apply(x), primaryKeyFunction.apply(value)))
-						.findAny();
-				if (newValue.isPresent() && !equality.test(value, newValue.get()))
-				{
+		});
 
-					equalizer.accept(newValue.get(), value);
-					if (callback.isPresent())
-					{
-						CompletableFuture<Void> cf = CompletableFuture.runAsync(callback.get(), executorService);
-						if (callAsync)
-							optional.get().add(cf);
-					}
-
-				}
-			}
-			if (callAsync)
-				for (CompletableFuture<Void> cf :optional.get()) {
-					try
-					{
-						cf.get();
-					}
-					catch (InterruptedException | ExecutionException e)
-					{
-						logger.error("CollectionSynchronizer.refreshList", e);
-					}
-				}
-		}, executorService);
 	}
 
 	private static void clean(WeakReference<?>[] weakReference)

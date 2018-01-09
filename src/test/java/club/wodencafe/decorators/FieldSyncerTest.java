@@ -39,6 +39,13 @@ import org.junit.Test;
 
 import club.wodencafe.decorators.FieldSyncer;
 
+/**
+ * Test basic reflection functionality.
+ * 
+ * @author Christopher Bryan Boyd <wodencafe@gmail.com>
+ * @since 0.1
+ *
+ */
 public class FieldSyncerTest
 {
 

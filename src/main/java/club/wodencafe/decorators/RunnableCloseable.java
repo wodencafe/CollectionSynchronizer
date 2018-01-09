@@ -41,8 +41,7 @@ import java.util.concurrent.CompletableFuture;
  * {@link java.lang.AutoCloseable}, and provides a {@link #runAsync} method.
  *  
  * @author Christopher Bryan Boyd <wodencafe@gmail.com>
- * @version 0.1
- * @since 2018-01-07
+ * @since 0.1
  * @see {@link java.lang.System#identityHashCode}
  *
  */

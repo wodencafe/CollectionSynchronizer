@@ -42,7 +42,6 @@ import java.lang.ref.ReferenceQueue;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.OptionalInt;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -52,7 +51,14 @@ import org.junit.Test;
 
 import com.jayway.awaitility.Awaitility;
 
-public class DecorationBuilderTest
+/**
+ * Test basic functionality.
+ * 
+ * @author Christopher Bryan Boyd <wodencafe@gmail.com>
+ * @since 0.1
+ *
+ */
+public class CollectionSynchronizerTest
 {
 
 	private boolean consumed = false;
@@ -93,11 +99,14 @@ public class DecorationBuilderTest
 	private PhantomReference<RunnableCloseable> decorateList(Collection<Person> personList)
 			throws InterruptedException, ExecutionException
 	{
-		RunnableCloseable ac = CollectionSynchronizer.builder(Person.class)
-				.withRefresh(() -> PersonService.getPeople())
-				.withPrimaryKeyFunction(Person::getId).withCloseHandler(() -> consumed = true).decorate(personList);
+		RunnableCloseable ac = CollectionSynchronizer
+			.builder(Person.class)
+			.withRefresh(() -> PersonService.getPeople())
+			.withPrimaryKeyFunction(Person::getId)
+			.withCloseHandler(() -> consumed = true)
+			.decorate(personList);
 
-		CompletableFuture.runAsync(ac).get();
+		ac.run();
 		return new PhantomReference<>(ac, new ReferenceQueue<>());
 	}
 
