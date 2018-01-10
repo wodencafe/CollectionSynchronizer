@@ -15,9 +15,40 @@ TODO: This will come soon.
 
 This project is in the process of being released on [Maven Central](https://search.maven.org/), when this is complete this artifact will be available and this section will be updated with the *Maven Coordinates*. 
 
-### Maven (Coming Soon)
+### Maven
+If you would like to start using this library in your [Maven](https://maven.apache.org/) projects, please add the following to your **pom.xml**:
+```
+<repositories>
+    <repository>
+        <id>jitpack.io</id>
+        <url>https://jitpack.io</url>
+    </repository>
+</repositories>
+```
+```
+<!-- https://jitpack.io/#wodencafe/CollectionSynchronizer -->
+<dependency>
+    <groupId>com.github.wodencafe</groupId>
+    <artifactId>CollectionSynchronizer</artifactId>
+    <version>master-SNAPSHOT</version>
+</dependency>
+```
 
-### Gradle (Coming Soon)
+
+### Gradle
+If you would like to start using this library in your [Gradle](https://gradle.org/) projects, please add the following to your **build.gradle**:
+```
+repositories {
+    maven { url "https://jitpack.io" }
+}
+```
+```
+dependencies {
+    // https://jitpack.io/#wodencafe/CollectionSynchronizer
+    compile 'com.github.wodencafe:CollectionSynchronizer:master-SNAPSHOT'
+}
+```
+
 
 For customizing and playing with the source for yourself, please see the **[Grab the source](#grab-the-source)** section.
 
