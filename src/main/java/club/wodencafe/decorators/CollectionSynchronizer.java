@@ -44,6 +44,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -140,7 +141,15 @@ public final class CollectionSynchronizer<T>
 		return this;
 
 	}
-	
+
+	public CollectionSynchronizer<T> withCreate(Callable<T> create)
+	{
+		Objects.requireNonNull(create, "Callable cannot be null.");
+		logger.trace(String.format("CollectionSynchronizer.withCreate([create] Callable<T> %d)",
+				System.identityHashCode(create)));
+		return withCreate(Observable.fromCallable(create));
+
+	}
 	public CollectionSynchronizer<T> withCreate(Observable<T> create)
 	{
 		Objects.requireNonNull(create, "Observable cannot be null.");
@@ -151,6 +160,15 @@ public final class CollectionSynchronizer<T>
 
 	}
 
+	public CollectionSynchronizer<T> withUpdate(Callable<T> update)
+	{
+		Objects.requireNonNull(update, "Callable cannot be null.");
+		logger.trace(String.format("CollectionSynchronizer.withUpdate([update] Callable<T> %d)",
+				System.identityHashCode(update)));
+		return withUpdate(Observable.fromCallable(update));
+
+	}
+
 	public CollectionSynchronizer<T> withUpdate(Observable<T> update)
 	{
 		Objects.requireNonNull(update, "Observable cannot be null.");
@@ -158,6 +176,15 @@ public final class CollectionSynchronizer<T>
 				System.identityHashCode(update)));
 		this.updateObservable = Optional.of(update);
 		return this;
+
+	}
+
+	public CollectionSynchronizer<T> withDelete(Callable<T> delete)
+	{
+		Objects.requireNonNull(delete, "Callable cannot be null.");
+		logger.trace(String.format("CollectionSynchronizer.withDelete([delete] Callable<T> %d)",
+				System.identityHashCode(delete)));
+		return withDelete(Observable.fromCallable(delete));
 
 	}
 
@@ -222,9 +249,20 @@ public final class CollectionSynchronizer<T>
 				+ (Objects.isNull(service) ? null : System.identityHashCode(service)) + ")");
 		return this;
 	}
+	public CollectionSynchronizer<T> withExpiration(long time, ChronoUnit timeUnit)
+	{
+		Preconditions.checkArgument(time > 0, "Time must be greater than 0.");
+		Objects.requireNonNull(timeUnit, "TimeUnit cannot be null.");
+		LocalDateTime expiration = LocalDateTime.now().plus(time, timeUnit);
+		logger.trace("CollectionSynchronizer.withExpiration([expiration] LocalDateTime "
+				+ System.identityHashCode(expiration) + ")");
+		this.expiration = Optional.ofNullable(expiration);
+		return this;
+	}
 
 	public CollectionSynchronizer<T> withExpiration(LocalDateTime expiration)
 	{
+		Preconditions.checkArgument(expiration.isAfter(LocalDateTime.now()), "Expiration must be in the future.");
 		logger.trace("CollectionSynchronizer.withExpiration([expiration] LocalDateTime "
 				+ (Objects.isNull(expiration) ? null : System.identityHashCode(expiration)) + ")");
 		this.expiration = Optional.ofNullable(expiration);
@@ -407,7 +445,7 @@ public final class CollectionSynchronizer<T>
 											refreshSupplier.get(), equalizer).subscribeOn(Schedulers.from(executorService.get()))
 									.subscribe((b) -> 
 									{
-										if (b)
+										if (b && !cf.isCancelled())
 										{
 											Collection<Runnable> callback2 = new ArrayList<>(callback);
 											callback2.add(() -> cf.complete(null));
@@ -427,6 +465,8 @@ public final class CollectionSynchronizer<T>
 										else
 										{
 											refreshingObjects.remove(weakList);
+											if(!cf.isCancelled())
+												cf.cancel(true);
 										}
 										
 									});
@@ -472,7 +512,7 @@ public final class CollectionSynchronizer<T>
 				{
 					if (refreshSupplier.isPresent())
 					{
-						if (Objects.nonNull(obj.get()) && (!limit.isPresent() || limit.isPresent() && limit.get() > atomic.get()))
+						if (Objects.nonNull(obj.get()) && (!limit.isPresent() || limit.isPresent() && limit.get() > atomic.getAndIncrement()))
 						{
 							try
 							{
@@ -633,12 +673,7 @@ public final class CollectionSynchronizer<T>
 		if (deleteObservable.isPresent())
 		{
 			deleteHandler[0] = Handlers.handleDelete(list, primaryKeyFunction.get(), executorService.get(),
-					Optional.of(() ->
-					{
-						if (callback.size() > 0)
-							for (Runnable runnable : callback)
-								runnable.run();
-					}));
+					Optional.of(() -> callback.forEach(Runnable::run)));
 			deleteObservable.get().subscribeOn(Schedulers.from(executorService.get())).subscribe(deleteHandler[0]);
 
 		}
@@ -652,12 +687,7 @@ public final class CollectionSynchronizer<T>
 		if (updateObservable.isPresent())
 		{
 			updateHandler[0] = Handlers.handleUpdate(list, primaryKeyFunction.get(), executorService.get(), equality,
-					equalizer, Optional.of(() ->
-					{
-						if (callback.size() > 0)
-							for (Runnable runnable : callback)
-								runnable.run();
-					}));
+					equalizer, Optional.of(() -> callback.forEach(Runnable::run)));
 			updateObservable.get().subscribeOn(Schedulers.from(executorService.get())).subscribe(updateHandler[0]);
 
 		}
@@ -671,12 +701,7 @@ public final class CollectionSynchronizer<T>
 		if (createObservable.isPresent())
 		{
 			createHandler[0] = Handlers.handleCreate(list, primaryKeyFunction.get(), executorService.get(),
-					Optional.of(() ->
-					{
-						if (callback.size() > 0)
-							for (Runnable runnable : callback)
-								runnable.run();
-					}));
+					Optional.of(() -> callback.forEach(Runnable::run)));
 			createObservable.get().subscribeOn(Schedulers.from(executorService.get())).subscribe(createHandler[0]);
 
 		}
@@ -721,7 +746,7 @@ public final class CollectionSynchronizer<T>
 									refreshList(weakList, equality, primaryKeyFunction,
 											refreshSupplier, equalizer).subscribeOn(Schedulers.from(executorService))
 									.subscribe((b) -> {
-										if (b)
+										if (b && !future[0].isCancelled())
 										{
 											if (callback.size() > 0)
 											{
